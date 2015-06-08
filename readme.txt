@@ -50,6 +50,8 @@ This will show the link to users have the ability to use it.
 
 == Screenshots ==
 
+1. The basic shortcode in the backend.
+2. The default delete link on the frontend.
 
 == Changelog ==
 
