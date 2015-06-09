@@ -81,6 +81,33 @@ class Sewn_Post_Delete
 			'request_id'   => 'delete_post',
 			'nonce_delete' => $this->plugin_name,
 			'link_class'   => "{$this->plugin_name}_link",
+			'strings'      => array(
+				'link_text'            => __( 'Delete Post', $this->plugin_name ),
+				'notification_success' => __( 'Successfully deleted %s', $this->plugin_name ),
+				'notification_failed'  => __( 'There was a problem deleting %s', $this->plugin_name ),
+				'default_title'        => __( 'the post', $this->plugin_name ),
+				'notification_delete'  => __( 'Are you sure you want to delete "%s"?', $this->plugin_name ),
+				'replace_title'        => '{post_title}',
+			),
+		);
+
+		$title = $this->settings['strings']['default_title'];
+		if (! empty($_REQUEST['post']) && is_numeric($_REQUEST['post']) ) {
+			$title = '"' . get_the_title($_REQUEST['post']) . '"';
+		}
+		$this->settings['notifications'] = array(
+			'failed' => array(
+				'key'     => 'action',
+				'value'   => 'delete_failed',
+				'message' => sprintf( $this->settings['strings']['notification_failed'], $title ),
+				'args'    => 'error=true',
+			),
+			'success' => array(
+				'key'     => 'action',
+				'value'   => 'delete_success',
+				'message' => sprintf( $this->settings['strings']['notification_success'], $title ),
+				'args'    => '',
+			),
 		);
 	}
 
@@ -108,21 +135,84 @@ class Sewn_Post_Delete
 	{
 		$this->settings = apply_filters( "{$this->prefix}/post_delete/settings", $this->settings );
 
-		add_action( "{$this->prefix}/post_delete/url",        array($this, 'get_url') );
-		add_action( "{$this->prefix}/post_delete/get_link",   array($this, 'get_link') );
-		add_action( "{$this->prefix}/post_delete/link",       array($this, 'link') );
-		add_shortcode( "{$this->prefix}_post_delete_link",    array($this, 'shortcode_link') );
+		$this->plugins_loaded();
+
+		add_action( "{$this->prefix}/post_delete/url",           array($this, 'get_url') );
+		add_action( "{$this->prefix}/post_delete/get_link",      array($this, 'get_link') );
+		add_action( "{$this->prefix}/post_delete/link",          array($this, 'link') );
+		add_shortcode( "{$this->prefix}_post_delete_link",       array($this, 'shortcode_link') );
+
+		add_filter( "the_content",                               array($this, 'the_content') );
+		add_action( "{$this->prefix}/post_delete/notification",  array($this, 'notification') );
 
 		// Load scripts
-		add_action( 'wp_enqueue_scripts',                     array($this, 'enqueue_scripts') );
+		add_action( 'wp_enqueue_scripts',                        array($this, 'enqueue_scripts') );
+	}
+
+	/**
+	 * On plugins_loaded test if we can use sewn_notifications
+	 *
+	 * @author  Jake Snyder
+	 * @since	1.0.0
+	 * @return	void
+	 */
+	public function plugins_loaded()
+	{
+		// Have the login plugin use frontend notifictions plugin
+		if ( apply_filters( "{$this->prefix}/post_delete/use_sewn_notifications", true ) )
+		{
+			if ( class_exists('Sewn_Notifications') ) {
+				add_filter( "{$this->prefix}/notifications/queries", array($this, 'add_notifications') );
+				add_filter( "{$this->prefix}/post_delete/use_sewn_notifications", '__return_true' );
+			} else {
+				add_filter( "{$this->prefix}/post_delete/use_sewn_notifications", '__return_false' );
+			}
+		}
+	}
+
+	public function the_content( $content )
+	{
+		if ( isset($_REQUEST['action']) && false === apply_filters( "{$this->prefix}/post_delete/use_sewn_notifications", false ) && apply_filters( "{$this->prefix}/post_delete/content_notification", true ) )
+		{
+			if ( 'delete_success' == $_REQUEST['action'] )
+			{
+				$title = $this->settings['strings']['default_title'];
+				if (! empty($_REQUEST['post']) && is_numeric($_REQUEST['post']) ) {
+					$title = '"' . get_the_title($_REQUEST['post']) . '"';
+				}
+				$content = $this->create_notification( sprintf( $this->settings['strings']['notification_success'], $title ) ) . $content;
+			}
+	
+			if ( 'delete_failed' == $_REQUEST['action'] )
+			{
+				$title = $this->settings['strings']['default_title'];
+				if (! empty($_REQUEST['post']) && is_numeric($_REQUEST['post']) ) {
+					$title = '"' . get_the_title($_REQUEST['post']) . '"';
+				}
+				$content = $this->create_notification( sprintf( $this->settings['strings']['notification_failed'], $title ) ) . $content;
+			}
+		}
+		return $content;
+	}
+
+	public function create_notification( $notification )
+	{
+		ob_start(); ?>
+		<div class="delete_post_notification">
+			<p style="background-color:lightpink; padding:.5em; text-align:center; width:100%;">
+				<?php echo $notification; ?>
+			</p>
+		</div>
+		<?php
+		return ob_get_clean();
 	}
 
 	public function enqueue_scripts()
 	{
 		wp_enqueue_script( $this->plugin_name, plugins_url( 'assets/js/sewn-in-post-delete.js', __FILE__ ), array(), $this->version );
 		$args = array(
-			'message'    => 'Are you sure you want to delete "[post_title]"?',
-			'replace'    => '[post_title]',
+			'message'    => sprintf( $this->settings['strings']['notification_delete'], $this->settings['strings']['replace_title'] ),
+			'replace'    => $this->settings['strings']['replace_title'],
 			'prefix'     => $this->prefix,
 			'link_class' => $this->settings['link_class'],
 		);
@@ -146,10 +236,11 @@ class Sewn_Post_Delete
 			{
 				$success = wp_delete_post($post_id);
 				if ( $success ) {
-					wp_redirect( add_query_arg( array( 'delete_post_success' => $post_id ), apply_filters( "{$this->prefix}/post_delete/redirect_success", home_url() ) ) );
+					wp_redirect( add_query_arg( array( 'action' => 'delete_success', 'post' => $post_id ), apply_filters( "{$this->prefix}/post_delete/redirect_success", home_url() ) ) );
 					die;
 				} else {
-					wp_redirect( add_query_arg( array( 'delete_post_failure' => $post_id ), get_permalink($post_id) ) );
+					wp_redirect( add_query_arg( array( 'action' => 'delete_failed', 'post' => $post_id ), get_permalink($post_id) ) );
+					die;
 				}
 				
 			}
@@ -179,7 +270,7 @@ class Sewn_Post_Delete
 	{
 		$defaults = array(
 			'post_id' => false,
-			'text'    => __("Delete Post", $this->plugin_name),
+			'text'    => $this->settings['strings']['link_text'],
 			'title'   => false,
 			'class'   => '',
 			'before'  => '',
@@ -203,7 +294,7 @@ class Sewn_Post_Delete
 			if (! $title ) {
 				$title = $text;
 			}
-			$output = '<a class="' . esc_attr($this->settings['link_class']) . ($class ? ' ' . esc_attr($class) : '') . '" data-title="' . esc_attr( get_the_title($post_id) ) . '" href="' . get_permalink() . '" title="' . esc_attr($title) . '">' . esc_html($text) . '</a>';
+			$output = '<a class="' . esc_attr($this->settings['link_class']) . ($class ? ' ' . esc_attr($class) : '') . '" data-title="' . esc_attr( get_the_title($post_id) ) . '" href="' . apply_filters( "{$this->prefix}/post_delete/url", $post_id ) . '" title="' . esc_attr($title) . '">' . esc_html($text) . '</a>';
 
 			return $before . $output . $after;
 		}
@@ -265,6 +356,19 @@ class Sewn_Post_Delete
 		}
 
 		return add_query_arg( array( $this->settings['request_id'] => $post_id, 'nonce' => wp_create_nonce($this->settings['nonce_delete'])), $url );
+	}
+
+	/**
+	 * Adds notifications to Sewn
+	 *
+	 * @author  Jake Snyder
+	 * @since	1.0.1
+	 * @return	array $queries Messages array
+	 */
+	public function add_notifications( $queries )
+	{
+		$queries = array_merge($queries, $this->settings['notifications']);
+		return $queries;
 	}
 
 	/**
