@@ -9,7 +9,7 @@
  * Plugin Name:       Sewn In Post Delete
  * Plugin URI:        https://wordpress.org/plugins/sewn-in-post-delete/
  * Description:       Basic infrastructure for front end users to delete their own posts.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Author:            Jupitercow
  * Author URI:        http://Jupitercow.com/
  * Contributor:       Jake Snyder
@@ -76,7 +76,7 @@ class Sewn_Post_Delete
 	{
 		$this->prefix      = 'sewn';
 		$this->plugin_name = strtolower(__CLASS__);
-		$this->version     = '1.0.0';
+		$this->version     = '1.0.1';
 		$this->settings    = array(
 			'request_id'   => 'delete_post',
 			'nonce_delete' => $this->plugin_name,
